@@ -90,7 +90,26 @@ function Login({ onLogin }) {
 // ─────────────────────────────────────────────────────────
 //  MÓDULO: PORTAL TÉCNICO
 // ─────────────────────────────────────────────────────────
-function PortalTecnico({ tickets }) {
+function PortalTecnico({ tickets, setTickets }) {
+  
+  const actualizarTicket = (id) => {
+    // 1. Pedimos el nuevo estado
+    const nuevoEstado = window.prompt("Ingresa el nuevo estado del ticket (ej. Completado, En Progreso, Detenido):");
+    
+    if (nuevoEstado) {
+      // 2. Simulamos la subida de evidencia
+      const evidencia = window.confirm("¿Deseas adjuntar una fotografía como evidencia de la visita técnica?");
+      if (evidencia) {
+        alert("Simulando apertura de explorador de archivos... \n\n¡Evidencia fotográfica subida con éxito al servidor!");
+      }
+      
+      // 3. Actualizamos el arreglo global de tickets
+      setTickets(tickets.map(t => 
+        t.id === id ? { ...t, estado: nuevoEstado } : t
+      ));
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       <h2 className="text-xl font-semibold">Mis Instalaciones y Tickets Asignados</h2>
@@ -102,8 +121,19 @@ function PortalTecnico({ tickets }) {
               <p className="text-sm text-slate-500">Tipo: {t.tipo} | Fecha prog: {t.fecha}</p>
             </div>
             <div className="flex items-center gap-3">
-              <span className={`px-3 py-1 rounded-full text-xs font-bold ${t.estado === 'Asignado' ? 'bg-blue-100 text-blue-700' : 'bg-yellow-100 text-yellow-700'}`}>{t.estado}</span>
-              <button className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-100">Actualizar Estado / Subir Evidencia</button>
+              <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                t.estado === 'Completado' ? 'bg-green-100 text-green-700' : 
+                t.estado === 'Asignado' ? 'bg-blue-100 text-blue-700' : 
+                'bg-yellow-100 text-yellow-700'
+              }`}>
+                {t.estado}
+              </span>
+              <button 
+                onClick={() => actualizarTicket(t.id)} 
+                className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-indigo-100 transition-colors"
+              >
+                Actualizar Estado / Subir Evidencia
+              </button>
             </div>
           </div>
         ))}
@@ -115,7 +145,29 @@ function PortalTecnico({ tickets }) {
 // ─────────────────────────────────────────────────────────
 //  MÓDULO: PORTAL CLIENTE
 // ─────────────────────────────────────────────────────────
-function PortalCliente() {
+function PortalCliente({ tickets, setTickets }) {
+  
+  const solicitarRevision = () => {
+    // 1. Pedimos al cliente que especifique el problema
+    const motivo = window.prompt("¿Cuál es el motivo de la revisión técnica? (Ej. Limpieza de paneles, Falla en inversor, Bajo rendimiento):");
+    
+    if (motivo) {
+      // 2. Creamos un nuevo ticket automático
+      const nuevoTicket = {
+        id: Math.floor(Math.random() * 900) + 100, // Genera un ID de 3 dígitos
+        cliente: "Sunrise Energy", // Cliente actual
+        tipo: motivo,
+        estado: "Pendiente", // Estado inicial
+        tecnico: "Por asignar",
+        fecha: new Date().toLocaleDateString()
+      };
+      
+      // 3. Lo agregamos a la base de datos de tickets
+      setTickets([...tickets, nuevoTicket]);
+      alert(`¡Solicitud enviada con éxito! Tu número de reporte es el #${nuevoTicket.id}. Nuestro equipo técnico se pondrá en contacto pronto.`);
+    }
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       <h2 className="text-xl font-semibold">Mi Sistema Solar (Sunrise Energy)</h2>
@@ -128,7 +180,12 @@ function PortalCliente() {
         <div className="bg-white p-6 rounded-xl border">
           <h3 className="text-sm text-slate-500 font-medium">Próximo Mantenimiento</h3>
           <p className="text-xl font-bold text-slate-800 mt-1">15 de Noviembre, 2026</p>
-          <button className="mt-3 text-sm text-indigo-600 font-medium hover:underline">Solicitar revisión técnica</button>
+          <button 
+            onClick={solicitarRevision} 
+            className="mt-3 text-sm text-indigo-600 font-medium hover:text-indigo-800 hover:underline transition-colors"
+          >
+            Solicitar revisión técnica →
+          </button>
         </div>
       </div>
     </div>
@@ -405,8 +462,8 @@ export default function App() {
         {pagina === "cotizacion" && <GeneradorCotizacion lead={leadActivo} resultadoSolar={resultadoSolar} inventario={inventario} onGuardar={(c) => { setCotizaciones([...cotizaciones, c]); setPagina("historial"); }} />}
         {pagina === "inventario" && <GestionInventario inventario={inventario} setInventario={setInventario} usuario={usuarioActual} />}
         {pagina === "reactivacion" && <ReactivacionComercial clientes={inactivos} setClientes={setInactivos} />}
-        {pagina === "portal_tecnico" && <PortalTecnico tickets={tickets} />}
-        {pagina === "portal_cliente" && <PortalCliente />}
+        {pagina === "portal_tecnico" && <PortalTecnico tickets={tickets} setTickets={setTickets} />}
+        {pagina === "portal_cliente" && <PortalCliente tickets={tickets} setTickets={setTickets} />}
         {pagina === "historial" && <div className="p-6 max-w-4xl mx-auto"><h2 className="text-xl font-semibold mb-4">Cotizaciones Generadas</h2>{cotizaciones.map(c=><div key={c.id} className="p-4 bg-white border rounded mb-2 flex justify-between"><p>{c.cliente}</p><p className="font-bold">{fmt(c.monto)}</p></div>)}</div>}
       </main>
     </div>
