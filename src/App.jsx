@@ -9,13 +9,13 @@
  *  4. App / Router       — navegación entre módulos con roles
  */
 
+
 import { useState, useMemo } from "react";
 
 // ─────────────────────────────────────────────────────────
-//  DATOS CONSTANTES (simulan consultas a DB / inventario)
+//  DATOS CONSTANTES E INICIALES
 // ─────────────────────────────────────────────────────────
 
-// Irradiación solar promedio por ciudad (kWh/m²/día)
 const IRRADIACION = {
   Monterrey: 5.4,
   "Ciudad de México": 5.1,
@@ -25,330 +25,219 @@ const IRRADIACION = {
   Otra: 5.0,
 };
 
-// Inventario de componentes (en producción viene de la BD)
-const INVENTARIO = [
+const INVENTARIO_INICIAL = [
   { id: 1, tipo: "Panel",    modelo: "JA Solar 550W Mono",      potencia_w: 550,  precio: 3200,  existencias: 80 },
-  { id: 2, tipo: "Panel",    modelo: "Longi 400W Half-cell",     potencia_w: 400,  precio: 2400,  existencias: 50 },
-  { id: 3, tipo: "Inversor", modelo: "Growatt 5kW String",       potencia_kw: 5,   precio: 14500, existencias: 12 },
-  { id: 4, tipo: "Inversor", modelo: "SMA Sunny Boy 10kW",       potencia_kw: 10,  precio: 28000, existencias: 6  },
-  { id: 5, tipo: "Inversor", modelo: "Huawei SUN2000 15kW",      potencia_kw: 15,  precio: 38000, existencias: 4  },
-  { id: 6, tipo: "Batería",  modelo: "Pylontech US3000C 3.5kWh", capacidad_kwh: 3.5, precio: 22000, existencias: 10 },
-  { id: 7, tipo: "Estructura",modelo: "Estructura aluminio/panel",precio_unidad: 420, existencias: 200 },
-  { id: 8, tipo: "Cableado", modelo: "Cableado + protecciones",  precio_unidad: 3500, existencias: 999 },
-  { id: 9, tipo: "Mano de obra", modelo: "Instalación completa (fija)", precio_unidad: 8000, existencias: 999 },
+  { id: 2, tipo: "Panel",    modelo: "Longi 400W Half-cell",    potencia_w: 400,  precio: 2400,  existencias: 50 },
+  { id: 3, tipo: "Inversor", modelo: "Growatt 5kW String",      potencia_kw: 5,   precio: 14500, existencias: 12 },
+  { id: 4, tipo: "Inversor", modelo: "SMA Sunny Boy 10kW",      potencia_kw: 10,  precio: 28000, existencias: 6  },
+  { id: 5, tipo: "Batería",  modelo: "Pylontech US3000C 3.5kWh",capacidad_kwh: 3.5, precio: 22000, existencias: 10 },
+  { id: 6, tipo: "Estructura",modelo: "Estructura aluminio",    precio: 420,  existencias: 200 },
+  { id: 7, tipo: "Cableado", modelo: "Cableado + protecciones", precio: 3500, existencias: 999 },
+  { id: 8, tipo: "Mano de obra", modelo: "Instalación estándar",precio: 8000, existencias: 999 },
 ];
 
-// Leads de ejemplo (en producción vienen de la BD)
 const LEADS_INICIALES = [
-  { id: 1, nombre: "Erik Aguilar Martínez", empresa: "Sunrise Energy",       telefono: "81-1234-5678", consumo_kwh: 850, estado: "Nuevo",         agente: "Luis Millan" },
-  { id: 2, nombre: "Martín Rivas",          empresa: "Independiente",        telefono: "81-9876-5432", consumo_kwh: 420, estado: "En seguimiento", agente: "Erick Aguilar" },
-  { id: 3, nombre: "Erardo Alanis",         empresa: "Solar Solutions",      telefono: "81-5555-0000", consumo_kwh: 1200, estado: "Cotizado",      agente: "Pedro Canizales" },
+  { id: 1, nombre: "Erik Aguilar Martínez", empresa: "Sunrise Energy", telefono: "81-1234-5678", consumo_kwh: 850, estado: "Nuevo", agente: "Luis Millan" },
+  { id: 2, nombre: "Martín Rivas", empresa: "Independiente", telefono: "81-9876-5432", consumo_kwh: 420, estado: "En seguimiento", agente: "Erick Aguilar" },
+];
+
+const USUARIOS = [
+  { email: "admin@atlas.com", password: "123", nombre: "Admin Master", rol: "Administrador" },
+  { email: "ventas@atlas.com", password: "123", nombre: "Agente Ventas", rol: "Agente" },
 ];
 
 const ESTADOS_LEAD = ["Nuevo", "Contactado", "En seguimiento", "Cotizado", "Cerrado ganado", "Cerrado perdido"];
-
-const BADGE_COLOR = {
-  "Nuevo":            "bg-blue-100 text-blue-800",
-  "Contactado":       "bg-yellow-100 text-yellow-800",
-  "En seguimiento":   "bg-purple-100 text-purple-800",
-  "Cotizado":         "bg-indigo-100 text-indigo-800",
-  "Cerrado ganado":   "bg-green-100 text-green-800",
-  "Cerrado perdido":  "bg-red-100 text-red-800",
-};
-
-// ─────────────────────────────────────────────────────────
-//  UTILIDADES
-// ─────────────────────────────────────────────────────────
-
-/** Dimensionamiento solar básico */
-function calcularSistema({ consumo_kwh_mes, ciudad, perdidas_pct = 0.8 }) {
-  const irr = IRRADIACION[ciudad] ?? 5.0;
-  const energia_dia = consumo_kwh_mes / 30;
-  const kwp_necesarios = energia_dia / (irr * perdidas_pct);
-
-  // Seleccionar panel (preferimos el de mayor potencia disponible)
-  const paneles = INVENTARIO.filter((c) => c.tipo === "Panel" && c.existencias > 0)
-    .sort((a, b) => b.potencia_w - a.potencia_w);
-  const panel = paneles[0];
-  const n_paneles = Math.ceil((kwp_necesarios * 1000) / panel.potencia_w);
-  const kwp_real = (n_paneles * panel.potencia_w) / 1000;
-
-  // Seleccionar inversor (capacidad >= 80% del sistema)
-  const inversores = INVENTARIO.filter(
-    (c) => c.tipo === "Inversor" && c.potencia_kw >= kwp_real * 0.8 && c.existencias > 0
-  ).sort((a, b) => a.potencia_kw - b.potencia_kw);
-  const inversor = inversores[0] ?? INVENTARIO.find((c) => c.tipo === "Inversor");
-
-  // Estimación producción anual
-  const produccion_kwh_anual = kwp_real * irr * 365 * perdidas_pct;
-
-  return { panel, n_paneles, kwp_real, kwp_necesarios, inversor, produccion_kwh_anual, irr };
-}
-
-/** Genera ítems de cotización a partir del resultado del dimensionamiento */
-function generarItems(resultado, incluyeBateria = false) {
-  const { panel, n_paneles, inversor } = resultado;
-  const items = [
-    { ...panel,       cantidad: n_paneles, precio_unitario: panel.precio },
-    { ...inversor,    cantidad: 1,         precio_unitario: inversor.precio },
-    { ...INVENTARIO.find((c) => c.tipo === "Estructura"), cantidad: n_paneles, precio_unitario: 420 },
-    { ...INVENTARIO.find((c) => c.tipo === "Cableado"),   cantidad: 1,         precio_unitario: 3500 },
-    { ...INVENTARIO.find((c) => c.tipo === "Mano de obra"), cantidad: 1,       precio_unitario: 8000 },
-  ];
-  if (incluyeBateria) {
-    const bat = INVENTARIO.find((c) => c.tipo === "Batería");
-    items.push({ ...bat, cantidad: 2, precio_unitario: bat.precio });
-  }
-  return items.map((it) => ({ ...it, subtotal: it.cantidad * it.precio_unitario }));
-}
+const ESTADOS_COTIZACION = ["Pendiente", "Aprobada", "Rechazada"];
 
 const fmt = (n) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN", maximumFractionDigits: 0 }).format(n);
 
 // ─────────────────────────────────────────────────────────
-//  COMPONENTE: CALCULADORA SOLAR
+//  COMPONENTE: LOGIN
 // ─────────────────────────────────────────────────────────
+function Login({ onLogin }) {
+  const [email, setEmail] = useState("admin@atlas.com");
+  const [password, setPassword] = useState("123");
+  const [error, setError] = useState("");
 
-function CalculadoraSolar({ onCotizar }) {
-  const [form, setForm] = useState({ consumo: "", ciudad: "Monterrey", perdidas: "80", bateria: false });
-  const [resultado, setResultado] = useState(null);
-
-  const calcular = () => {
-    if (!form.consumo || isNaN(form.consumo)) return;
-    const r = calcularSistema({
-      consumo_kwh_mes: parseFloat(form.consumo),
-      ciudad: form.ciudad,
-      perdidas_pct: parseFloat(form.perdidas) / 100,
-    });
-    setResultado(r);
+  const handleLogin = (e) => {
+    e.preventDefault();
+    const user = USUARIOS.find(u => u.email === email && u.password === password);
+    if (user) onLogin(user);
+    else setError("Credenciales incorrectas. Verifica tu correo y contraseña.");
   };
 
   return (
-    <div className="max-w-2xl mx-auto p-6 space-y-6">
-      <h2 className="text-xl font-semibold text-slate-900">Calculadora de dimensionamiento solar</h2>
-
-      {/* Formulario */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Consumo mensual (kWh)</label>
-            <input
-              type="number"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              placeholder="ej. 850"
-              value={form.consumo}
-              onChange={(e) => setForm({ ...form, consumo: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Ciudad</label>
-            <select
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              value={form.ciudad}
-              onChange={(e) => setForm({ ...form, ciudad: e.target.value })}
-            >
-              {Object.keys(IRRADIACION).map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Factor de pérdidas (%)</label>
-            <input
-              type="number"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              value={form.perdidas}
-              onChange={(e) => setForm({ ...form, perdidas: e.target.value })}
-            />
-            <p className="text-xs text-slate-400 mt-1">Típico: 80 % (incluye sombreado, temperatura, inversor)</p>
-          </div>
-          <div className="flex items-center gap-2 pt-5">
-            <input
-              type="checkbox"
-              id="bateria"
-              checked={form.bateria}
-              onChange={(e) => setForm({ ...form, bateria: e.target.checked })}
-              className="h-4 w-4 rounded border-slate-300 text-indigo-600"
-            />
-            <label htmlFor="bateria" className="text-sm font-medium text-slate-700">Incluir banco de baterías</label>
-          </div>
+    <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="bg-white p-8 rounded-xl shadow-sm border border-slate-200 w-full max-w-md">
+        <div className="text-center mb-8">
+          <h1 className="text-2xl font-bold text-indigo-700">ATLAS CRM</h1>
+          <p className="text-sm text-slate-500 mt-1">Acceso al sistema</p>
         </div>
-        <button
-          onClick={calcular}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded-lg text-sm transition-colors"
-        >
-          Calcular sistema
-        </button>
-      </div>
-
-      {/* Resultado */}
-      {resultado && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
-          <h3 className="font-semibold text-slate-900">Resultado del dimensionamiento</h3>
-          <div className="grid grid-cols-3 gap-4">
-            {[
-              { label: "Potencia del sistema", value: `${resultado.kwp_real.toFixed(2)} kWp` },
-              { label: "Número de paneles",    value: `${resultado.n_paneles} unidades` },
-              { label: "Irradiación local",    value: `${resultado.irr} kWh/m²/día` },
-              { label: "Producción estimada",  value: `${Math.round(resultado.produccion_kwh_anual).toLocaleString()} kWh/año` },
-              { label: "Panel seleccionado",   value: resultado.panel.modelo },
-              { label: "Inversor seleccionado",value: resultado.inversor.modelo },
-            ].map((kpi) => (
-              <div key={kpi.label} className="bg-slate-50 rounded-lg p-3">
-                <p className="text-xs text-slate-500">{kpi.label}</p>
-                <p className="text-sm font-semibold text-slate-900 mt-1">{kpi.value}</p>
-              </div>
-            ))}
+        {error && <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg mb-4">{error}</div>}
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Correo electrónico</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" required />
           </div>
-          <button
-            onClick={() => onCotizar(resultado, form.bateria)}
-            className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded-lg text-sm transition-colors"
-          >
-            Generar cotización con este sistema →
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Contraseña</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500" required />
+          </div>
+          <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg text-sm transition-colors mt-2">
+            Iniciar sesión
           </button>
+        </form>
+        <div className="mt-6 text-xs text-slate-400 text-center">
+          <p>Demos: admin@atlas.com / ventas@atlas.com (Pass: 123)</p>
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────
-//  COMPONENTE: GESTIÓN DE LEADS
+//  COMPONENTE: INVENTARIO
 // ─────────────────────────────────────────────────────────
+function GestionInventario({ inventario, setInventario, usuario }) {
+  const [nuevoItem, setNuevoItem] = useState({ tipo: "Panel", modelo: "", precio: "", existencias: "" });
 
-function GestionLeads({ onNuevaCotizacion }) {
-  const [leads, setLeads] = useState(LEADS_INICIALES);
-  const [mostrarForm, setMostrarForm] = useState(false);
-  const [filtro, setFiltro] = useState("Todos");
-  const [nuevo, setNuevo] = useState({ nombre: "", empresa: "", telefono: "", consumo_kwh: "", estado: "Nuevo", agente: "" });
+  const agregarItem = () => {
+    if (!nuevoItem.modelo || !nuevoItem.precio) return;
+    
+    
+    const nuevoId = inventario.length > 0 ? Math.max(...inventario.map(i => i.id)) + 1 : 1;
 
-  const leadsFiltrados = useMemo(
-    () => (filtro === "Todos" ? leads : leads.filter((l) => l.estado === filtro)),
-    [leads, filtro]
-  );
-
-  const agregarLead = () => {
-    if (!nuevo.nombre || !nuevo.telefono) return;
-    setLeads([...leads, { ...nuevo, id: Date.now(), consumo_kwh: parseFloat(nuevo.consumo_kwh) || 0 }]);
-    setNuevo({ nombre: "", empresa: "", telefono: "", consumo_kwh: "", estado: "Nuevo", agente: "" });
-    setMostrarForm(false);
+    setInventario([...inventario, { 
+      ...nuevoItem, 
+      id: nuevoId, // <-- Aquí usamos el nuevo ID ordenado
+      precio: parseFloat(nuevoItem.precio), 
+      existencias: parseInt(nuevoItem.existencias) || 0 
+    }]);
+    setNuevoItem({ tipo: "Panel", modelo: "", precio: "", existencias: "" });
   };
+  const eliminarItem = (id) => setInventario(inventario.filter(i => i.id !== id));
 
-  const cambiarEstado = (id, estado) =>
-    setLeads(leads.map((l) => (l.id === id ? { ...l, estado } : l)));
+  const isAdmin = usuario.rol === "Administrador";
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold text-slate-900">Gestión de leads</h2>
-        <button
-          onClick={() => setMostrarForm(!mostrarForm)}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-        >
-          + Nuevo lead
-        </button>
-      </div>
-
-      {/* Formulario nuevo lead */}
-      {mostrarForm && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <h3 className="font-medium text-slate-900 mb-4">Registrar prospecto</h3>
-          <div className="grid grid-cols-2 gap-4">
-            {[
-              { key: "nombre", label: "Nombre completo", placeholder: "Carlos Rodríguez" },
-              { key: "empresa", label: "Empresa", placeholder: "Solar Noreste" },
-              { key: "telefono", label: "Teléfono", placeholder: "81-xxxx-xxxx" },
-              { key: "consumo_kwh", label: "Consumo mensual (kWh)", placeholder: "850" },
-              { key: "agente", label: "Agente asignado", placeholder: "Nombre del agente" },
-            ].map(({ key, label, placeholder }) => (
-              <div key={key}>
-                <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
-                <input
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder={placeholder}
-                  value={nuevo[key]}
-                  onChange={(e) => setNuevo({ ...nuevo, [key]: e.target.value })}
-                />
-              </div>
-            ))}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Estado inicial</label>
-              <select
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                value={nuevo.estado}
-                onChange={(e) => setNuevo({ ...nuevo, estado: e.target.value })}
-              >
-                {ESTADOS_LEAD.map((e) => <option key={e}>{e}</option>)}
-              </select>
-            </div>
+      <h2 className="text-xl font-semibold text-slate-900">Módulo de Inventario</h2>
+      
+      {isAdmin && (
+        <div className="bg-white rounded-xl border border-slate-200 p-4 flex gap-4 items-end">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-slate-700 mb-1">Tipo</label>
+            <select value={nuevoItem.tipo} onChange={(e) => setNuevoItem({...nuevoItem, tipo: e.target.value})} className="w-full border rounded-lg px-2 py-1.5 text-sm">
+              <option>Panel</option><option>Inversor</option><option>Batería</option><option>Estructura</option><option>Cableado</option>
+            </select>
           </div>
-          <div className="flex gap-3 mt-4">
-            <button onClick={agregarLead} className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors">
-              Guardar lead
-            </button>
-            <button onClick={() => setMostrarForm(false)} className="text-slate-600 text-sm px-4 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors">
-              Cancelar
-            </button>
+          <div className="flex-[2]">
+            <label className="block text-xs font-medium text-slate-700 mb-1">Modelo / Descripción</label>
+            <input value={nuevoItem.modelo} onChange={(e) => setNuevoItem({...nuevoItem, modelo: e.target.value})} className="w-full border rounded-lg px-2 py-1.5 text-sm" placeholder="Ej. Panel 600W" />
           </div>
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-slate-700 mb-1">Precio Unit.</label>
+            <input type="number" value={nuevoItem.precio} onChange={(e) => setNuevoItem({...nuevoItem, precio: e.target.value})} className="w-full border rounded-lg px-2 py-1.5 text-sm" />
+          </div>
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-slate-700 mb-1">Stock</label>
+            <input type="number" value={nuevoItem.existencias} onChange={(e) => setNuevoItem({...nuevoItem, existencias: e.target.value})} className="w-full border rounded-lg px-2 py-1.5 text-sm" />
+          </div>
+          <button onClick={agregarItem} className="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded-lg text-sm font-medium">Agregar</button>
         </div>
       )}
 
-      {/* Filtros por estado */}
-      <div className="flex gap-2 flex-wrap">
-        {["Todos", ...ESTADOS_LEAD].map((e) => (
-          <button
-            key={e}
-            onClick={() => setFiltro(e)}
-            className={`text-xs px-3 py-1 rounded-full border transition-colors ${
-              filtro === e ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-200 text-slate-600 hover:bg-slate-50"
-            }`}
-          >
-            {e}
-          </button>
-        ))}
-      </div>
-
-      {/* Tabla de leads */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {["Nombre", "Empresa", "Consumo kWh", "Agente", "Estado", "Acciones"].map((h) => (
-                <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wide">{h}</th>
-              ))}
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">ID</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Tipo</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Modelo</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Precio Base</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Stock</th>
+              {isAdmin && <th className="text-left px-4 py-3 text-xs font-semibold text-slate-600">Acciones</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {leadsFiltrados.map((lead) => (
-              <tr key={lead.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-4 py-3 font-medium text-slate-900">{lead.nombre}</td>
-                <td className="px-4 py-3 text-slate-600">{lead.empresa}</td>
-                <td className="px-4 py-3 text-slate-600">{lead.consumo_kwh?.toLocaleString() ?? "—"}</td>
-                <td className="px-4 py-3 text-slate-600">{lead.agente || "—"}</td>
+            {inventario.map((item) => (
+              <tr key={item.id} className="hover:bg-slate-50">
+                <td className="px-4 py-3 text-slate-500">#{item.id}</td>
+                <td className="px-4 py-3 font-medium"><span className="bg-slate-100 px-2 py-1 rounded text-xs">{item.tipo}</span></td>
+                <td className="px-4 py-3">{item.modelo}</td>
+                <td className="px-4 py-3 font-medium text-slate-900">{fmt(item.precio)}</td>
                 <td className="px-4 py-3">
-                  <select
-                    className={`text-xs px-2 py-1 rounded-full border-0 font-medium ${BADGE_COLOR[lead.estado] || "bg-gray-100 text-gray-700"}`}
-                    value={lead.estado}
-                    onChange={(e) => cambiarEstado(lead.id, e.target.value)}
-                  >
-                    {ESTADOS_LEAD.map((e) => <option key={e}>{e}</option>)}
-                  </select>
+                  <span className={`px-2 py-1 rounded text-xs font-bold ${item.existencias > 10 ? 'text-green-700' : 'text-red-600'}`}>{item.existencias} uds.</span>
                 </td>
-                <td className="px-4 py-3">
-                  <button
-                    onClick={() => onNuevaCotizacion(lead)}
-                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
-                  >
-                    Cotizar →
-                  </button>
-                </td>
+                {isAdmin && (
+                  <td className="px-4 py-3">
+                    <button onClick={() => eliminarItem(item.id)} className="text-red-500 hover:text-red-700 text-xs">Eliminar</button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
-        {leadsFiltrados.length === 0 && (
-          <p className="text-center text-slate-400 py-8 text-sm">No hay leads con este filtro</p>
-        )}
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+//  COMPONENTE: CALCULADORA SOLAR (Adaptada al estado global)
+// ─────────────────────────────────────────────────────────
+function CalculadoraSolar({ onCotizar, inventario }) {
+  const [form, setForm] = useState({ consumo: "", ciudad: "Monterrey", perdidas: "80", bateria: false });
+  const [resultado, setResultado] = useState(null);
+
+  const calcular = () => {
+    if (!form.consumo || isNaN(form.consumo)) return;
+    const irr = IRRADIACION[form.ciudad] ?? 5.0;
+    const perdidas_pct = parseFloat(form.perdidas) / 100;
+    const kwp_necesarios = (form.consumo / 30) / (irr * perdidas_pct);
+
+    const paneles = inventario.filter((c) => c.tipo === "Panel" && c.existencias > 0).sort((a, b) => b.potencia_w - a.potencia_w);
+    const panel = paneles[0] || inventario.find(c => c.tipo === "Panel");
+    
+    if(!panel) return alert("No hay paneles en inventario");
+    
+    const n_paneles = Math.ceil((kwp_necesarios * 1000) / panel.potencia_w);
+    const kwp_real = (n_paneles * panel.potencia_w) / 1000;
+
+    const inversores = inventario.filter((c) => c.tipo === "Inversor" && c.potencia_kw >= kwp_real * 0.8 && c.existencias > 0).sort((a, b) => a.potencia_kw - b.potencia_kw);
+    const inversor = inversores[0] || inventario.find(c => c.tipo === "Inversor");
+
+    setResultado({ panel, n_paneles, kwp_real, kwp_necesarios, inversor, produccion_kwh_anual: kwp_real * irr * 365 * perdidas_pct, irr });
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto p-6 space-y-6">
+      <h2 className="text-xl font-semibold text-slate-900">Calculadora de dimensionamiento</h2>
+      <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+        {/* Mismo formulario que tenías... */}
+        <div className="grid grid-cols-2 gap-4">
+          <div><label className="block text-sm mb-1">Consumo (kWh)</label><input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.consumo} onChange={(e) => setForm({ ...form, consumo: e.target.value })} /></div>
+          <div><label className="block text-sm mb-1">Ciudad</label><select className="w-full border rounded-lg px-3 py-2 text-sm" value={form.ciudad} onChange={(e) => setForm({ ...form, ciudad: e.target.value })}>{Object.keys(IRRADIACION).map((c) => <option key={c}>{c}</option>)}</select></div>
+          <div><label className="block text-sm mb-1">Factor pérdidas (%)</label><input type="number" className="w-full border rounded-lg px-3 py-2 text-sm" value={form.perdidas} onChange={(e) => setForm({ ...form, perdidas: e.target.value })} /></div>
+          <div className="flex items-center gap-2 pt-5"><input type="checkbox" id="bateria" checked={form.bateria} onChange={(e) => setForm({ ...form, bateria: e.target.checked })} /><label htmlFor="bateria" className="text-sm">Incluir baterías</label></div>
+        </div>
+        <button onClick={calcular} className="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm">Calcular sistema</button>
+      </div>
+
+      {resultado && (
+        <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+          <h3 className="font-semibold text-slate-900">Resultado</h3>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <p>Potencia: <b>{resultado.kwp_real.toFixed(2)} kWp</b></p>
+            <p>Paneles: <b>{resultado.n_paneles}x {resultado.panel.modelo}</b></p>
+            <p>Inversor: <b>{resultado.inversor.modelo}</b></p>
+            <p>Producción: <b>{Math.round(resultado.produccion_kwh_anual).toLocaleString()} kWh/año</b></p>
+          </div>
+          <button onClick={() => onCotizar(resultado, form.bateria)} className="w-full bg-green-600 text-white py-2 rounded-lg text-sm mt-4">
+            Generar cotización →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -356,243 +245,203 @@ function GestionLeads({ onNuevaCotizacion }) {
 // ─────────────────────────────────────────────────────────
 //  COMPONENTE: GENERADOR DE COTIZACIÓN
 // ─────────────────────────────────────────────────────────
-
-function GeneradorCotizacion({ lead, resultadoSolar, conBateria, onVolver }) {
+function GeneradorCotizacion({ lead, resultadoSolar, conBateria, inventario, onGuardar, onVolver }) {
   const [margen, setMargen] = useState(25);
-  const [vigencia, setVigencia] = useState(30);
+  
+  if (!resultadoSolar) return <div className="p-6">Primero usa la calculadora.</div>;
 
-  const items = useMemo(
-    () => (resultadoSolar ? generarItems(resultadoSolar, conBateria) : []),
-    [resultadoSolar, conBateria]
-  );
-
-  const costoTotal = items.reduce((s, i) => s + i.subtotal, 0);
+  const items = [
+    { ...resultadoSolar.panel, cantidad: resultadoSolar.n_paneles },
+    { ...resultadoSolar.inversor, cantidad: 1 },
+    { ...inventario.find(c => c.tipo === "Estructura"), cantidad: resultadoSolar.n_paneles },
+    { ...inventario.find(c => c.tipo === "Cableado"), cantidad: 1 },
+    { ...inventario.find(c => c.tipo === "Mano de obra"), cantidad: 1 },
+  ];
+  if (conBateria) items.push({ ...inventario.find(c => c.tipo === "Batería"), cantidad: 2 });
+  
+  const itemsConSubtotal = items.map(it => ({ ...it, subtotal: (it.precio || 0) * (it.cantidad || 1) }));
+  const costoTotal = itemsConSubtotal.reduce((s, i) => s + i.subtotal, 0);
   const precioVenta = costoTotal * (1 + margen / 100);
-  const utilidad = precioVenta - costoTotal;
 
-  const hoy = new Date();
-  const fechaVigencia = new Date(hoy);
-  fechaVigencia.setDate(hoy.getDate() + vigencia);
-
-  const folio = `ATL-${hoy.getFullYear()}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
+  const guardar = () => {
+    onGuardar({
+      id: Date.now(),
+      fecha: new Date().toLocaleDateString(),
+      cliente: lead?.nombre || "Cliente Público",
+      potencia: resultadoSolar.kwp_real.toFixed(2),
+      monto: precioVenta,
+      estado: "Pendiente"
+    });
+  };
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <div className="flex items-center gap-4">
-        <button onClick={onVolver} className="text-slate-500 hover:text-slate-700 text-sm">← Volver</button>
-        <h2 className="text-xl font-semibold text-slate-900">Cotización — {lead?.nombre ?? "Cliente nuevo"}</h2>
-        <span className="ml-auto text-xs text-slate-400 font-mono">{folio}</span>
+    <div className="max-w-4xl mx-auto p-6 space-y-4">
+      <button onClick={onVolver} className="text-slate-500 text-sm mb-4">← Volver</button>
+      <h2 className="text-xl font-semibold">Cotización para {lead?.nombre ?? "Prospecto"}</h2>
+      
+      <div className="bg-white rounded-xl border p-4">
+        <table className="w-full text-sm">
+          <thead><tr className="bg-slate-50 text-left"><th className="p-2">Item</th><th className="p-2">Cant</th><th className="p-2">Total</th></tr></thead>
+          <tbody>
+            {itemsConSubtotal.map((it, i) => (
+              <tr key={i} className="border-t">
+                <td className="p-2">{it.modelo}</td><td className="p-2">{it.cantidad}</td><td className="p-2 font-medium">{fmt(it.subtotal)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
-      {!resultadoSolar && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm text-yellow-800">
-          Primero usa la Calculadora Solar para dimensionar el sistema, luego regresa aquí para generar la cotización.
+      <div className="bg-white rounded-xl border p-4">
+        <label className="block text-sm mb-2">Margen de utilidad ({margen}%)</label>
+        <input type="range" min="10" max="50" value={margen} onChange={(e) => setMargen(Number(e.target.value))} className="w-full" />
+        <div className="mt-4 bg-indigo-50 p-4 rounded-lg flex justify-between items-center">
+          <div><p className="text-sm text-slate-500">Costo Directo</p><p className="font-bold text-lg">{fmt(costoTotal)}</p></div>
+          <div className="text-right"><p className="text-sm text-indigo-600 font-bold">Precio Venta (Cliente)</p><p className="font-bold text-2xl text-indigo-700">{fmt(precioVenta)}</p></div>
         </div>
-      )}
+      </div>
 
-      {resultadoSolar && (
-        <>
-          {/* KPIs del sistema */}
-          <div className="grid grid-cols-4 gap-4">
-            {[
-              { label: "Sistema",        value: `${resultadoSolar.kwp_real.toFixed(2)} kWp` },
-              { label: "Paneles",        value: `${resultadoSolar.n_paneles} × ${resultadoSolar.panel.modelo.split(" ")[0]}` },
-              { label: "Producción est.", value: `${Math.round(resultadoSolar.produccion_kwh_anual / 1000)} MWh/año` },
-              { label: "Vigencia",       value: `${vigencia} días` },
-            ].map((kpi) => (
-              <div key={kpi.label} className="bg-indigo-50 rounded-xl p-4 text-center">
-                <p className="text-xs text-indigo-500 font-medium">{kpi.label}</p>
-                <p className="text-base font-bold text-indigo-900 mt-1">{kpi.value}</p>
-              </div>
+      <button onClick={guardar} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl">
+        Guardar en Historial de Cotizaciones
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+//  COMPONENTE: GESTION DE LEADS (Se mantiene casi igual pero recibe estado)
+// ─────────────────────────────────────────────────────────
+function GestionLeads({ leads, setLeads, onCotizarLead }) {
+  const [nuevo, setNuevo] = useState({ nombre: "", telefono: "", estado: "Nuevo" });
+  return (
+    <div className="max-w-4xl mx-auto p-6 space-y-4">
+      <h2 className="text-xl font-semibold">Gestión de Leads</h2>
+      <div className="bg-white p-4 border rounded-xl flex gap-4">
+        <input placeholder="Nombre" value={nuevo.nombre} onChange={e=>setNuevo({...nuevo, nombre: e.target.value})} className="border px-2 py-1 rounded flex-1"/>
+        <input placeholder="Teléfono" value={nuevo.telefono} onChange={e=>setNuevo({...nuevo, telefono: e.target.value})} className="border px-2 py-1 rounded flex-1"/>
+        <button onClick={()=>{ setLeads([...leads, {...nuevo, id: Date.now()}]); setNuevo({nombre:"", telefono:"", estado:"Nuevo"})}} className="bg-indigo-600 text-white px-4 py-1 rounded">Agregar</button>
+      </div>
+      <table className="w-full bg-white border rounded-xl text-sm overflow-hidden">
+        <thead className="bg-slate-50"><tr><th className="p-3 text-left">Nombre</th><th className="p-3 text-left">Estado</th><th className="p-3">Acción</th></tr></thead>
+        <tbody>
+          {leads.map(l => (
+            <tr key={l.id} className="border-t">
+              <td className="p-3 font-medium">{l.nombre}</td>
+              <td className="p-3">
+                <select value={l.estado} onChange={(e) => setLeads(leads.map(x => x.id === l.id ? {...x, estado: e.target.value} : x))} className="border-0 bg-slate-100 rounded px-2 py-1 text-xs">
+                  {ESTADOS_LEAD.map(e => <option key={e}>{e}</option>)}
+                </select>
+              </td>
+              <td className="p-3 text-center"><button onClick={()=>onCotizarLead(l)} className="text-indigo-600 font-medium">Cotizar</button></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────
+//  COMPONENTE: SEGUIMIENTO DE COTIZACIONES (NUEVO)
+// ─────────────────────────────────────────────────────────
+function SeguimientoCotizaciones({ cotizaciones, setCotizaciones }) {
+  return (
+    <div className="max-w-4xl mx-auto p-6 space-y-4">
+      <h2 className="text-xl font-semibold">Historial de Cotizaciones</h2>
+      {cotizaciones.length === 0 ? <p className="text-slate-500">No hay cotizaciones generadas aún.</p> : (
+        <table className="w-full bg-white border rounded-xl text-sm overflow-hidden">
+          <thead className="bg-slate-50"><tr><th className="p-3 text-left">Fecha</th><th className="p-3 text-left">Cliente</th><th className="p-3 text-left">Monto</th><th className="p-3 text-left">Estado</th></tr></thead>
+          <tbody>
+            {cotizaciones.map(c => (
+              <tr key={c.id} className="border-t">
+                <td className="p-3 text-slate-500">{c.fecha}</td>
+                <td className="p-3 font-medium">{c.cliente}</td>
+                <td className="p-3 font-bold text-slate-800">{fmt(c.monto)}</td>
+                <td className="p-3">
+                  <select value={c.estado} onChange={(e) => setCotizaciones(cotizaciones.map(x => x.id === c.id ? {...x, estado: e.target.value} : x))} 
+                    className={`border-0 rounded-full px-3 py-1 text-xs font-bold ${c.estado==='Aprobada'?'bg-green-100 text-green-700':c.estado==='Rechazada'?'bg-red-100 text-red-700':'bg-yellow-100 text-yellow-700'}`}>
+                    {ESTADOS_COTIZACION.map(e => <option key={e}>{e}</option>)}
+                  </select>
+                </td>
+              </tr>
             ))}
-          </div>
-
-          {/* Tabla de ítems */}
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  {["Descripción", "Tipo", "Cant.", "Precio unit.", "Subtotal"].map((h) => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-slate-600 uppercase tracking-wide">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {items.map((it, i) => (
-                  <tr key={i} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-900">{it.modelo}</td>
-                    <td className="px-4 py-3">
-                      <span className="text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full">{it.tipo}</span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">{it.cantidad}</td>
-                    <td className="px-4 py-3 text-slate-700">{fmt(it.precio_unitario)}</td>
-                    <td className="px-4 py-3 font-semibold text-slate-900">{fmt(it.subtotal)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-slate-50 border-t border-slate-200">
-                <tr>
-                  <td colSpan={4} className="px-4 py-3 text-sm font-medium text-slate-700">Costo directo total</td>
-                  <td className="px-4 py-3 font-bold text-slate-900">{fmt(costoTotal)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-
-          {/* Controles de precio */}
-          <div className="bg-white rounded-xl border border-slate-200 p-6 grid grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Margen de utilidad: <span className="text-indigo-600 font-bold">{margen}%</span>
-              </label>
-              <input
-                type="range" min="5" max="60" value={margen}
-                onChange={(e) => setMargen(parseInt(e.target.value))}
-                className="w-full accent-indigo-600"
-              />
-              <div className="flex justify-between text-xs text-slate-400 mt-1">
-                <span>5%</span><span>60%</span>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Vigencia de oferta: <span className="text-indigo-600 font-bold">{vigencia} días</span>
-              </label>
-              <input
-                type="range" min="7" max="90" step="7" value={vigencia}
-                onChange={(e) => setVigencia(parseInt(e.target.value))}
-                className="w-full accent-indigo-600"
-              />
-              <p className="text-xs text-slate-400 mt-1">Válida hasta: {fechaVigencia.toLocaleDateString("es-MX")}</p>
-            </div>
-          </div>
-
-          {/* Resumen financiero */}
-          <div className="bg-gradient-to-br from-indigo-600 to-indigo-700 rounded-xl p-6 text-white grid grid-cols-3 gap-6">
-            <div>
-              <p className="text-indigo-200 text-sm">Costo directo</p>
-              <p className="text-2xl font-bold mt-1">{fmt(costoTotal)}</p>
-            </div>
-            <div>
-              <p className="text-indigo-200 text-sm">Precio de venta sugerido</p>
-              <p className="text-2xl font-bold mt-1">{fmt(precioVenta)}</p>
-            </div>
-            <div>
-              <p className="text-indigo-200 text-sm">Utilidad estimada</p>
-              <p className="text-2xl font-bold mt-1">{fmt(utilidad)}</p>
-              <p className="text-indigo-300 text-xs mt-1">{margen}% del precio de venta</p>
-            </div>
-          </div>
-
-          {/* Acciones */}
-          <div className="flex gap-3">
-            <button className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl text-sm transition-colors">
-              Guardar cotización
-            </button>
-            <button className="flex-1 border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium py-3 rounded-xl text-sm transition-colors">
-              Descargar PDF
-            </button>
-            <button className="flex-1 border border-green-300 hover:bg-green-50 text-green-700 font-medium py-3 rounded-xl text-sm transition-colors">
-              Enviar por correo
-            </button>
-          </div>
-        </>
+          </tbody>
+        </table>
       )}
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────
-//  APP PRINCIPAL — navegación entre módulos
+//  APP PRINCIPAL — ESTADO GLOBAL Y RUTAS
 // ─────────────────────────────────────────────────────────
-
-const NAV = [
-  { key: "dashboard", label: "Dashboard",    icon: "📊" },
-  { key: "leads",     label: "Leads",        icon: "👥" },
-  { key: "calc",      label: "Calculadora",  icon: "⚡" },
-  { key: "cotizacion",label: "Cotización",   icon: "📄" },
-];
-
 export default function App() {
-  const [pagina, setPagina] = useState("leads");
+  const [usuarioActual, setUsuarioActual] = useState(null);
+  
+  // Estado global
+  const [pagina, setPagina] = useState("dashboard");
+  const [inventario, setInventario] = useState(INVENTARIO_INICIAL);
+  const [leads, setLeads] = useState(LEADS_INICIALES);
+  const [cotizaciones, setCotizaciones] = useState([]);
+  
+  // Estados para flujo de cotización
   const [leadActivo, setLeadActivo] = useState(null);
   const [resultadoSolar, setResultadoSolar] = useState(null);
   const [conBateria, setConBateria] = useState(false);
 
-  const irACotizacion = (resultado, bateria) => {
-    setResultadoSolar(resultado);
-    setConBateria(bateria);
-    setPagina("cotizacion");
-  };
+  // Si no hay usuario, mostrar Login
+  if (!usuarioActual) return <Login onLogin={setUsuarioActual} />;
 
-  const cotizarDesdeLeads = (lead) => {
-    setLeadActivo(lead);
-    setPagina("calc");
-  };
+  const NAV = [
+    { key: "dashboard", label: "Dashboard",    icon: "📊" },
+    { key: "leads",     label: "Leads",        icon: "👥" },
+    { key: "inventario",label: "Inventario",   icon: "📦" },
+    { key: "calc",      label: "Calculadora",  icon: "⚡" },
+    { key: "historial", label: "Cotizaciones", icon: "📄" },
+  ];
+
+  // KPIs Dinámicos
+  const leadsActivos = leads.filter(l => l.estado !== "Cerrado ganado" && l.estado !== "Cerrado perdido").length;
+  const ingresosProyectados = cotizaciones.filter(c => c.estado === "Aprobada").reduce((sum, c) => sum + c.monto, 0);
 
   return (
     <div className="flex min-h-screen bg-slate-50">
-      {/* Sidebar */}
-      <aside className="w-56 bg-white border-r border-slate-200 flex flex-col">
-        <div className="p-5 border-b border-slate-100">
-          <p className="text-lg font-bold text-indigo-700 tracking-tight">ATLAS CRM</p>
-          <p className="text-xs text-slate-400">Sector fotovoltaico</p>
+      <aside className="w-56 bg-white border-r flex flex-col">
+        <div className="p-5 border-b">
+          <p className="text-lg font-bold text-indigo-700">ATLAS CRM</p>
+          <p className="text-xs text-slate-500">{usuarioActual.rol}: {usuarioActual.nombre}</p>
         </div>
         <nav className="flex-1 p-3 space-y-1">
           {NAV.map((n) => (
-            <button
-              key={n.key}
-              onClick={() => setPagina(n.key)}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
-                pagina === n.key
-                  ? "bg-indigo-50 text-indigo-700 font-medium border-l-2 border-indigo-600"
-                  : "text-slate-600 hover:bg-slate-50"
-              }`}
-            >
-              <span className="text-base">{n.icon}</span>
-              {n.label}
+            <button key={n.key} onClick={() => setPagina(n.key)} className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-left transition-colors ${pagina === n.key ? "bg-indigo-50 text-indigo-700 font-medium" : "text-slate-600 hover:bg-slate-50"}`}>
+              <span className="text-base">{n.icon}</span>{n.label}
             </button>
           ))}
         </nav>
-        <div className="p-4 border-t border-slate-100">
-          <p className="text-xs text-slate-500 font-medium">Brigada 003 — PI1</p>
-          <p className="text-xs text-slate-400">FIME UANL · Enero–Junio 2026</p>
-        </div>
+        <button onClick={() => setUsuarioActual(null)} className="m-4 text-xs text-red-500 hover:underline">Cerrar sesión</button>
       </aside>
 
-      {/* Contenido principal */}
       <main className="flex-1 overflow-y-auto">
         {pagina === "dashboard" && (
           <div className="max-w-4xl mx-auto p-6 space-y-6">
-            <h2 className="text-xl font-semibold text-slate-900">Dashboard</h2>
-            <div className="grid grid-cols-4 gap-4">
-              {[
-                { label: "Leads activos",    value: "3",   color: "text-blue-600",  bg: "bg-blue-50"  },
-                { label: "Cotizaciones",      value: "1",   color: "text-indigo-600",bg: "bg-indigo-50"},
-                { label: "Instalaciones",     value: "0",   color: "text-teal-600",  bg: "bg-teal-50"  },
-                { label: "Tickets abiertos",  value: "0",   color: "text-red-600",   bg: "bg-red-50"   },
-              ].map((kpi) => (
-                <div key={kpi.label} className={`${kpi.bg} rounded-xl p-4`}>
-                  <p className="text-xs text-slate-500">{kpi.label}</p>
-                  <p className={`text-3xl font-bold ${kpi.color} mt-1`}>{kpi.value}</p>
-                </div>
-              ))}
+            <h2 className="text-xl font-semibold text-slate-900">Dashboard Dinámico</h2>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-blue-50 rounded-xl p-4"><p className="text-xs text-slate-500">Leads en proceso</p><p className="text-3xl font-bold text-blue-600 mt-1">{leadsActivos}</p></div>
+              <div className="bg-indigo-50 rounded-xl p-4"><p className="text-xs text-slate-500">Cotizaciones Totales</p><p className="text-3xl font-bold text-indigo-600 mt-1">{cotizaciones.length}</p></div>
+              <div className="bg-green-50 rounded-xl p-4"><p className="text-xs text-slate-500">Ingresos (Aprobadas)</p><p className="text-2xl font-bold text-green-600 mt-1">{fmt(ingresosProyectados)}</p></div>
             </div>
-            <p className="text-sm text-slate-400">Selecciona un módulo en el menú lateral para comenzar.</p>
           </div>
         )}
-        {pagina === "leads" && <GestionLeads onNuevaCotizacion={cotizarDesdeLeads} />}
-        {pagina === "calc" && (
-          <CalculadoraSolar onCotizar={irACotizacion} />
-        )}
-        {pagina === "cotizacion" && (
-          <GeneradorCotizacion
-            lead={leadActivo}
-            resultadoSolar={resultadoSolar}
-            conBateria={conBateria}
-            onVolver={() => setPagina("calc")}
-          />
-        )}
+        
+        {pagina === "leads" && <GestionLeads leads={leads} setLeads={setLeads} onCotizarLead={(l) => { setLeadActivo(l); setPagina("calc"); }} />}
+        
+        {pagina === "inventario" && <GestionInventario inventario={inventario} setInventario={setInventario} usuario={usuarioActual} />}
+        
+        {pagina === "calc" && <CalculadoraSolar inventario={inventario} onCotizar={(res, bat) => { setResultadoSolar(res); setConBateria(bat); setPagina("cotizacion"); }} />}
+        
+        {pagina === "cotizacion" && <GeneradorCotizacion lead={leadActivo} resultadoSolar={resultadoSolar} conBateria={conBateria} inventario={inventario} onVolver={() => setPagina("calc")} onGuardar={(c) => { setCotizaciones([...cotizaciones, c]); setPagina("historial"); }} />}
+        
+        {pagina === "historial" && <SeguimientoCotizaciones cotizaciones={cotizaciones} setCotizaciones={setCotizaciones} />}
       </main>
     </div>
   );
