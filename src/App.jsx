@@ -52,14 +52,15 @@ const fmt = (n) => new Intl.NumberFormat("es-MX", { style: "currency", currency:
 // ─────────────────────────────────────────────────────────
 //  COMPONENTE: LOGIN
 // ─────────────────────────────────────────────────────────
-function Login({ onLogin }) {
+function Login({ onLogin, usuarios }) { // <-- Recibe usuarios como propiedad
   const [email, setEmail] = useState("admin@atlas.com");
   const [password, setPassword] = useState("123");
   const [error, setError] = useState("");
 
   const handleLogin = (e) => {
     e.preventDefault();
-    const user = USUARIOS.find(u => u.email === email && u.password === password);
+    // Busca en la lista dinámica de usuarios
+    const user = usuarios.find(u => u.email === email && u.password === password);
     if (user) onLogin(user);
     else setError("Credenciales incorrectas. Verifica tu correo y contraseña.");
   };
@@ -143,34 +144,32 @@ function PortalTecnico({ tickets, setTickets }) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  MÓDULO: PORTAL CLIENTE
+//  MÓDULO: PORTAL CLIENTE (Dinámico)
 // ─────────────────────────────────────────────────────────
-function PortalCliente({ tickets, setTickets }) {
+function PortalCliente({ tickets, setTickets, usuarioActual }) { // <-- Recibe usuarioActual
   
   const solicitarRevision = () => {
-    // 1. Pedimos al cliente que especifique el problema
     const motivo = window.prompt("¿Cuál es el motivo de la revisión técnica? (Ej. Limpieza de paneles, Falla en inversor, Bajo rendimiento):");
     
     if (motivo) {
-      // 2. Creamos un nuevo ticket automático
       const nuevoTicket = {
-        id: Math.floor(Math.random() * 900) + 100, // Genera un ID de 3 dígitos
-        cliente: "Sunrise Energy", // Cliente actual
+        id: Math.floor(Math.random() * 900) + 100,
+        cliente: usuarioActual.nombre, // <-- Usa el nombre del cliente real
         tipo: motivo,
-        estado: "Pendiente", // Estado inicial
+        estado: "Pendiente",
         tecnico: "Por asignar",
         fecha: new Date().toLocaleDateString()
       };
       
-      // 3. Lo agregamos a la base de datos de tickets
       setTickets([...tickets, nuevoTicket]);
-      alert(`¡Solicitud enviada con éxito! Tu número de reporte es el #${nuevoTicket.id}. Nuestro equipo técnico se pondrá en contacto pronto.`);
+      alert(`¡Solicitud enviada con éxito! Tu número de reporte es el #${nuevoTicket.id}.`);
     }
   };
 
   return (
     <div className="max-w-4xl mx-auto p-6 space-y-6">
-      <h2 className="text-xl font-semibold">Mi Sistema Solar (Sunrise Energy)</h2>
+      {/* Muestra el nombre dinámico del cliente logueado */}
+      <h2 className="text-xl font-semibold">Mi Sistema Solar — {usuarioActual.nombre}</h2>
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white p-6 rounded-xl border border-green-200 border-l-4 border-l-green-500">
           <h3 className="text-sm text-slate-500 font-medium">Estado del Sistema</h3>
@@ -395,6 +394,15 @@ function GeneradorCotizacion({ lead, resultadoSolar, inventario, onGuardar }) {
 // ─────────────────────────────────────────────────────────
 export default function App() {
   const [usuarioActual, setUsuarioActual] = useState(null);
+  
+  // 1. AQUÍ ESTÁN LOS USUARIOS DINÁMICOS
+  const [usuarios, setUsuarios] = useState([
+    { email: "admin@atlas.com", password: "123", nombre: "Admin Master", rol: "Administrador" },
+    { email: "ventas@atlas.com", password: "123", nombre: "Agente Ventas", rol: "Agente" },
+    { email: "tecnico@atlas.com", password: "123", nombre: "Juan Técnico", rol: "Técnico" },
+    { email: "cliente@atlas.com", password: "123", nombre: "Sunrise Energy", rol: "Cliente" },
+  ]);
+
   const [pagina, setPagina] = useState("dashboard");
   const [inventario, setInventario] = useState(INVENTARIO_INICIAL);
   const [leads, setLeads] = useState(LEADS_INICIALES);
@@ -403,8 +411,12 @@ export default function App() {
   const [tickets, setTickets] = useState(TICKETS_INICIALES);
   const [leadActivo, setLeadActivo] = useState(null);
   const [resultadoSolar, setResultadoSolar] = useState(null);
+  
+  // 2. ESTADO PARA CREAR NUEVOS CLIENTES
+  const [nuevoLead, setNuevoLead] = useState({ nombre: "", telefono: "", consumo_kwh: "" });
 
-  if (!usuarioActual) return <Login onLogin={(u) => { setUsuarioActual(u); setPagina(u.rol === 'Cliente' ? 'portal_cliente' : u.rol === 'Técnico' ? 'portal_tecnico' : 'dashboard'); }} />;
+  // 3. SE LE PASAN LOS USUARIOS AL LOGIN
+  if (!usuarioActual) return <Login onLogin={(u) => { setUsuarioActual(u); setPagina(u.rol === 'Cliente' ? 'portal_cliente' : u.rol === 'Técnico' ? 'portal_tecnico' : 'dashboard'); }} usuarios={usuarios} />;
 
   // Filtrado de menú lateral según el rol
   const getNavItems = () => {
@@ -447,23 +459,66 @@ export default function App() {
       {/* Contenedor principal */}
       <main className="flex-1 overflow-y-auto">
         {pagina === "dashboard" && <div className="p-6"><h2 className="text-xl font-semibold">Resumen Operativo</h2><p className="text-slate-500 mt-2">Bienvenido al sistema integrado.</p></div>}
+        
+        {/* 4. PANTALLA DE LEADS ACTUALIZADA CON FORMULARIO Y CREACIÓN AUTOMÁTICA DE CUENTA */}
         {pagina === "leads" && (
           <div className="p-6 max-w-4xl mx-auto space-y-6">
-            <h2 className="text-xl font-semibold">Leads Activos</h2>
-            {leads.map(l => (
-              <div key={l.id} className="bg-white p-4 border rounded flex justify-between items-center">
-                <div><p className="font-bold">{l.nombre}</p><p className="text-sm text-slate-500">{l.telefono} | Consumo: {l.consumo_kwh} kWh</p></div>
-                <button onClick={()=>{ setLeadActivo(l); setPagina("calc"); }} className="bg-indigo-100 text-indigo-700 px-4 py-2 rounded text-sm font-medium">Dimensionar Proyecto</button>
-              </div>
-            ))}
+            <h2 className="text-xl font-semibold">Leads Activos y Registro</h2>
+            
+            <div className="bg-white p-4 border border-slate-200 rounded-xl flex gap-3 items-center">
+              <input placeholder="Nombre del prospecto" className="border px-3 py-2 rounded-lg flex-1 text-sm" value={nuevoLead.nombre} onChange={e => setNuevoLead({...nuevoLead, nombre: e.target.value})} />
+              <input placeholder="Teléfono" className="border px-3 py-2 rounded-lg w-32 text-sm" value={nuevoLead.telefono} onChange={e => setNuevoLead({...nuevoLead, telefono: e.target.value})} />
+              <input type="number" placeholder="Consumo kWh" className="border px-3 py-2 rounded-lg w-32 text-sm" value={nuevoLead.consumo_kwh} onChange={e => setNuevoLead({...nuevoLead, consumo_kwh: e.target.value})} />
+              <button 
+                onClick={() => {
+                  if(!nuevoLead.nombre) return alert("El nombre es obligatorio");
+                  
+                  // Agrega el cliente a la lista
+                  setLeads([{ ...nuevoLead, id: Date.now(), estado: "Nuevo" }, ...leads]);
+                  
+                  // Crea su cuenta de acceso automáticamente
+                  const correoFicticio = `${nuevoLead.nombre.toLowerCase().replace(/\s+/g, "")}@cliente.com`;
+                  setUsuarios([...usuarios, { 
+                    email: correoFicticio, 
+                    password: "123", 
+                    nombre: nuevoLead.nombre, 
+                    rol: "Cliente" 
+                  }]);
+                  
+                  alert(`¡Cliente registrado!\nCuenta de acceso creada:\nCorreo: ${correoFicticio}\nContraseña: 123`);
+                  setNuevoLead({ nombre: "", telefono: "", consumo_kwh: "" });
+                }} 
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors"
+              >
+                + Agregar
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {leads.map(l => (
+                <div key={l.id} className="bg-white p-4 border rounded-xl flex justify-between items-center hover:shadow-sm transition-shadow">
+                  <div>
+                    <p className="font-bold text-slate-800">{l.nombre}</p>
+                    <p className="text-sm text-slate-500">Tel: {l.telefono || "N/A"} | Consumo: <span className="font-medium text-slate-700">{l.consumo_kwh || 0} kWh</span></p>
+                  </div>
+                  <button onClick={()=>{ setLeadActivo(l); setPagina("calc"); }} className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-4 py-2 rounded-lg text-sm font-bold transition-colors">
+                    Dimensionar Proyecto →
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
+
         {pagina === "calc" && <CalculadoraSolar inventario={inventario} onCotizar={(res) => { setResultadoSolar(res); setPagina("cotizacion"); }} />}
         {pagina === "cotizacion" && <GeneradorCotizacion lead={leadActivo} resultadoSolar={resultadoSolar} inventario={inventario} onGuardar={(c) => { setCotizaciones([...cotizaciones, c]); setPagina("historial"); }} />}
         {pagina === "inventario" && <GestionInventario inventario={inventario} setInventario={setInventario} usuario={usuarioActual} />}
         {pagina === "reactivacion" && <ReactivacionComercial clientes={inactivos} setClientes={setInactivos} />}
         {pagina === "portal_tecnico" && <PortalTecnico tickets={tickets} setTickets={setTickets} />}
-        {pagina === "portal_cliente" && <PortalCliente tickets={tickets} setTickets={setTickets} />}
+        
+        {/* 5. PORTAL DEL CLIENTE RECIBE EL USUARIO ACTUAL */}
+        {pagina === "portal_cliente" && <PortalCliente tickets={tickets} setTickets={setTickets} usuarioActual={usuarioActual} />}
+        
         {pagina === "historial" && <div className="p-6 max-w-4xl mx-auto"><h2 className="text-xl font-semibold mb-4">Cotizaciones Generadas</h2>{cotizaciones.map(c=><div key={c.id} className="p-4 bg-white border rounded mb-2 flex justify-between"><p>{c.cliente}</p><p className="font-bold">{fmt(c.monto)}</p></div>)}</div>}
       </main>
     </div>
