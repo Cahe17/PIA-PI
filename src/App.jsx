@@ -221,10 +221,19 @@ function ReactivacionComercial({ clientes, setClientes }) {
 }
 
 // ─────────────────────────────────────────────────────────
-//  MÓDULO: INVENTARIO (Con justificación de bajas)
+//  MÓDULO: INVENTARIO
 // ─────────────────────────────────────────────────────────
 function GestionInventario({ inventario, setInventario, usuario }) {
   const [nuevoItem, setNuevoItem] = useState({ tipo: "Panel", modelo: "", precio: "", existencias: "" });
+  
+  // NUEVO: Estado para guardar la lista dinámica de proveedores
+  const [proveedores, setProveedores] = useState([
+    "SolarCenter (Paneles)",
+    "Krannich Solar (Inversores)",
+    "Exel Solar (Estructuras y Cableado)",
+    "BayWa r.e. (Almacenamiento)"
+  ]);
+
   const isAdmin = usuario.rol === "Administrador";
 
   const agregarItem = () => {
@@ -235,10 +244,27 @@ function GestionInventario({ inventario, setInventario, usuario }) {
   };
 
   const eliminarItem = (id) => {
-    const motivo = window.prompt("Requisito de auditoría: Especifique el motivo de la baja del artículo (ej. Daño, obsoleto, merma):");
+    const motivo = window.prompt("Requisito de auditoría: Especifique el motivo de la baja del artículo:");
     if (motivo) {
       alert(`Artículo dado de baja. Motivo registrado: "${motivo}"`);
       setInventario(inventario.filter(i => i.id !== id));
+    }
+  };
+
+  const abrirProveedores = () => {
+    const accion = window.prompt("Módulo de Proveedores\n\n¿Qué acción deseas realizar?\n1. Ver directorio actual\n2. Registrar nuevo proveedor\n\n(Ingresa 1 o 2):");
+    
+    if (accion === "1") {
+      // Ahora armamos la alerta leyendo los datos de la lista dinámica
+      const listaTexto = proveedores.map(p => `- ${p}`).join("\n");
+      alert(`📋 Directorio de Proveedores Autorizados:\n\n${listaTexto}`);
+    } else if (accion === "2") {
+      const nuevo = window.prompt("Ingresa el nombre comercial de la nueva empresa proveedora (ej. 'Huawei (Inversores)'):");
+      if (nuevo) {
+        // Guardamos el nuevo proveedor en la memoria del sistema
+        setProveedores([...proveedores, nuevo]);
+        alert(`✅ Proveedor "${nuevo}" guardado exitosamente en el directorio.`);
+      }
     }
   };
 
@@ -246,7 +272,7 @@ function GestionInventario({ inventario, setInventario, usuario }) {
     <div className="max-w-4xl mx-auto p-6 space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold">Módulo de Inventario y Proveedores</h2>
-        {isAdmin && <button className="text-sm bg-slate-800 text-white px-3 py-1.5 rounded">Gestionar Proveedores</button>}
+        {isAdmin && <button onClick={abrirProveedores} className="text-sm bg-slate-800 hover:bg-slate-700 transition-colors text-white px-3 py-1.5 rounded">Gestionar Proveedores</button>}
       </div>
       
       {isAdmin && (
@@ -255,7 +281,7 @@ function GestionInventario({ inventario, setInventario, usuario }) {
           <div className="flex-[2]"><label className="block text-xs mb-1">Modelo</label><input value={nuevoItem.modelo} onChange={(e) => setNuevoItem({...nuevoItem, modelo: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
           <div className="flex-1"><label className="block text-xs mb-1">Costo Unit.</label><input type="number" value={nuevoItem.precio} onChange={(e) => setNuevoItem({...nuevoItem, precio: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
           <div className="flex-1"><label className="block text-xs mb-1">Stock</label><input type="number" value={nuevoItem.existencias} onChange={(e) => setNuevoItem({...nuevoItem, existencias: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
-          <button onClick={agregarItem} className="bg-green-600 text-white px-4 py-1.5 rounded text-sm">Agregar</button>
+          <button onClick={agregarItem} className="bg-green-600 hover:bg-green-700 transition-colors text-white px-4 py-1.5 rounded text-sm">Agregar</button>
         </div>
       )}
 
@@ -264,10 +290,10 @@ function GestionInventario({ inventario, setInventario, usuario }) {
           <thead className="bg-slate-50 border-b"><tr><th className="text-left p-3">ID</th><th className="text-left p-3">Tipo</th><th className="text-left p-3">Modelo</th><th className="text-left p-3">Costo Base</th><th className="text-left p-3">Stock</th>{isAdmin && <th className="text-left p-3">Acciones</th>}</tr></thead>
           <tbody className="divide-y">
             {inventario.map((item) => (
-              <tr key={item.id}>
+              <tr key={item.id} className="hover:bg-slate-50">
                 <td className="p-3 text-slate-500">#{item.id}</td><td className="p-3"><span className="bg-slate-100 px-2 py-1 rounded text-xs">{item.tipo}</span></td><td className="p-3">{item.modelo}</td><td className="p-3 font-medium">{fmt(item.precio)}</td>
                 <td className="p-3"><span className={`px-2 py-1 rounded text-xs font-bold ${item.existencias > 10 ? 'text-green-700' : 'text-red-600'}`}>{item.existencias} uds.</span></td>
-                {isAdmin && <td className="p-3"><button onClick={() => eliminarItem(item.id)} className="text-red-500 hover:text-red-700 text-xs bg-red-50 px-2 py-1 rounded">Dar de baja</button></td>}
+                {isAdmin && <td className="p-3"><button onClick={() => eliminarItem(item.id)} className="text-red-500 hover:text-red-700 text-xs bg-red-50 px-2 py-1 rounded transition-colors">Dar de baja</button></td>}
               </tr>
             ))}
           </tbody>
@@ -435,6 +461,10 @@ export default function App() {
     return menu;
   };
 
+  // Cálculos dinámicos para el Dashboard
+  const leadsActivos = leads.filter(l => l.estado !== "Cerrado ganado" && l.estado !== "Cerrado perdido").length;
+  const ingresosProyectados = cotizaciones.filter(c => c.estado === "Aprobada").reduce((sum, c) => sum + c.monto, 0);
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       {/* Menú lateral (oculto al imprimir) */}
@@ -458,7 +488,26 @@ export default function App() {
 
       {/* Contenedor principal */}
       <main className="flex-1 overflow-y-auto">
-        {pagina === "dashboard" && <div className="p-6"><h2 className="text-xl font-semibold">Resumen Operativo</h2><p className="text-slate-500 mt-2">Bienvenido al sistema integrado.</p></div>}
+        {pagina === "dashboard" && (
+          <div className="p-6 max-w-4xl mx-auto space-y-6">
+            <h2 className="text-xl font-semibold text-slate-900">Dashboard Dinámico</h2>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-blue-50 rounded-xl p-4">
+                <p className="text-xs text-slate-500">Leads en proceso</p>
+                <p className="text-3xl font-bold text-blue-600 mt-1">{leadsActivos}</p>
+              </div>
+              <div className="bg-indigo-50 rounded-xl p-4">
+                <p className="text-xs text-slate-500">Cotizaciones Totales</p>
+                <p className="text-3xl font-bold text-indigo-600 mt-1">{cotizaciones.length}</p>
+              </div>
+              <div className="bg-green-50 rounded-xl p-4">
+                <p className="text-xs text-slate-500">Ingresos (Aprobadas)</p>
+                <p className="text-2xl font-bold text-green-600 mt-1">{fmt(ingresosProyectados)}</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-400 mt-4">Selecciona un módulo en el menú lateral para comenzar a operar.</p>
+          </div>
+        )}
         
         {/* 4. PANTALLA DE LEADS ACTUALIZADA CON FORMULARIO Y CREACIÓN AUTOMÁTICA DE CUENTA */}
         {pagina === "leads" && (
@@ -519,7 +568,52 @@ export default function App() {
         {/* 5. PORTAL DEL CLIENTE RECIBE EL USUARIO ACTUAL */}
         {pagina === "portal_cliente" && <PortalCliente tickets={tickets} setTickets={setTickets} usuarioActual={usuarioActual} />}
         
-        {pagina === "historial" && <div className="p-6 max-w-4xl mx-auto"><h2 className="text-xl font-semibold mb-4">Cotizaciones Generadas</h2>{cotizaciones.map(c=><div key={c.id} className="p-4 bg-white border rounded mb-2 flex justify-between"><p>{c.cliente}</p><p className="font-bold">{fmt(c.monto)}</p></div>)}</div>}
+        {pagina === "historial" && (
+          <div className="p-6 max-w-4xl mx-auto space-y-4">
+            <h2 className="text-xl font-semibold text-slate-900">Historial de Cotizaciones</h2>
+            
+            {cotizaciones.length === 0 ? (
+              <p className="text-slate-500 text-sm">No se han generado cotizaciones todavía en esta sesión.</p>
+            ) : (
+              <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      <th className="p-3 text-xs font-semibold text-slate-600 uppercase">Cliente</th>
+                      <th className="p-3 text-xs font-semibold text-slate-600 uppercase">Fecha</th>
+                      <th className="p-3 text-xs font-semibold text-slate-600 uppercase">Inversión</th>
+                      <th className="p-3 text-xs font-semibold text-slate-600 uppercase">Estado Operativo</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {cotizaciones.map(c => (
+                      <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3 font-medium text-slate-900">{c.cliente}</td>
+                        <td className="p-3 text-slate-500 text-xs">{c.fecha}</td>
+                        <td className="p-3 font-bold text-slate-700">{fmt(c.monto)}</td>
+                        <td className="p-3">
+                          <select 
+                            value={c.estado} 
+                            onChange={(e) => setCotizaciones(cotizaciones.map(x => x.id === c.id ? {...x, estado: e.target.value} : x))} 
+                            className={`border rounded-lg px-2 py-1 text-xs font-bold focus:outline-none transition-colors ${
+                              c.estado === 'Aprobada' ? 'bg-green-50 text-green-700 border-green-200' : 
+                              c.estado === 'Rechazada' ? 'bg-red-50 text-red-700 border-red-200' : 
+                              'bg-yellow-50 text-yellow-700 border-yellow-200'
+                            }`}
+                          >
+                            <option value="Pendiente"> Pendiente</option>
+                            <option value="Aprobada"> Aprobada</option>
+                            <option value="Rechazada"> Rechazada</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
